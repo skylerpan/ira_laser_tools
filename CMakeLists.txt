@@ -92,25 +92,31 @@ find_package(ament_cmake REQUIRED)
 find_package(laser_geometry REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2_geometry_msgs  REQUIRED)
+find_package(geometry_msgs      REQUIRED)
+
 set(INCLUDE_DIRS ${ament_cmake_INCLUDE_DIRS} ${REQUIRED_INCLUDE_DIRS}
   ${laser_geometry_INCLUDE_DIRS} ${std_msgs_INCLUDE_DIRS} ${tf2_INCLUDE_DIRS}
   ${pcl_ros_INCLUDE_DIRS} ${Eigen3_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS}
   ${rclcpp_INCLUDE_DIRS} ${sensor_msgs_INCLUDE_DIRS})
 include_directories(${INCLUDE_DIRS})
 set(LIBRARY_DIRS ${ament_cmake_LIBRARIES} ${REQUIRED_LIBRARIES}
-  ${laser_geometry_LIBRARIES} ${std_msgs_LIBRARIES} ${tf2_LIBRARIES}
+  ${laser_geometry_LIBRARIES} ${std_msgs_LIBRARIES} ${tf2_LIBRARIES} ${tf2_sensor_msgs_LIBRARIES}
   ${pcl_ros_LIBRARIES} ${Eigen3_LIBRARIES} ${PCL_LIBRARIES} ${rclcpp_LIBRARIES}
-  ${sensor_msgs_LIBRARIES})
+  ${sensor_msgs_LIBRARIES} ${tf2_geometry_msgs_LIBRARIES} ${geometry_msgs_LIBRARIES})
 target_link_libraries(laserscan_multi_merger ${LIBRARY_DIRS})
 # target_link_libraries(laserscan_virtualizer ${LIBRARY_DIRS})
 set(LIBS ${ament_cmake_LIBRARIES} ${REQUIRED_LIBRARIES}
   ${laser_geometry_LIBRARIES} ${std_msgs_LIBRARIES} ${tf2_LIBRARIES}
   ${Eigen3_LIBRARIES} ${PCL_LIBRARIES} ${rclcpp_LIBRARIES}
   ${sensor_msgs_LIBRARIES})
+
+set(EXECUTABLE_NAME "laserscan_multi_merger")
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -150,8 +156,14 @@ set(LIBS ${ament_cmake_LIBRARIES} ${REQUIRED_LIBRARIES}
 # )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch)
+# install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch)
+install(TARGETS ${EXECUTABLE_NAME}
+ DESTINATION lib/${PROJECT_NAME})
 
+ install(
+  DIRECTORY launch cfg 
+  DESTINATION share/${PROJECT_NAME}
+)
 #############
 ## Testing ##
 #############
@@ -165,14 +177,14 @@ install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch)
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-ament_export_dependencies(ament_cmake)
-ament_export_dependencies(laser_geometry)
-ament_export_dependencies(std_msgs)
-ament_export_dependencies(tf2)
-ament_export_dependencies(Eigen3)
-ament_export_dependencies(PCL)
-ament_export_dependencies(rclcpp)
-ament_export_dependencies(sensor_msgs)
-ament_export_include_directories(${INCLUDE_DIRS})
+# ament_export_dependencies(ament_cmake)
+# ament_export_dependencies(laser_geometry)
+# ament_export_dependencies(std_msgs)
+# ament_export_dependencies(tf2)
+# ament_export_dependencies(Eigen3)
+# ament_export_dependencies(PCL)
+# ament_export_dependencies(rclcpp)
+# ament_export_dependencies(sensor_msgs)
+# ament_export_include_directories(${INCLUDE_DIRS})
 
 ament_package()
