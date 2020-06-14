@@ -59,16 +59,18 @@ private:
     string laserscan_topics;
 };
 
-// void LaserscanMerger::reconfigureCallback(laserscan_multi_mergerConfig &config, uint32_t level)
-// {
-// 	this->angle_min = config.angle_min;
-// 	this->angle_max = config.angle_max;
-// 	this->angle_increment = config.angle_increment;
-// 	this->time_increment = config.time_increment;
-// 	this->scan_time = config.scan_time;
-// 	this->range_min = config.range_min;
-// 	this->range_max = config.range_max;
-// }
+#ifdef DYNAMIC_RECONFIG
+void LaserscanMerger::reconfigureCallback(laserscan_multi_mergerConfig &config, uint32_t level)
+{
+	this->angle_min = config.angle_min;
+	this->angle_max = config.angle_max;
+	this->angle_increment = config.angle_increment;
+	this->time_increment = config.time_increment;
+	this->scan_time = config.scan_time;
+	this->range_min = config.range_min;
+	this->range_max = config.range_max;
+}
+#endif
 
 void LaserscanMerger::laserscan_topic_parser()
 {
@@ -376,7 +378,7 @@ int main(int argc, char** argv)
 	auto nh = rclcpp::Node::make_shared("laserscan_multi_merger");
 
     LaserscanMerger _laser_merger(nh);
-#if 0
+#ifdef DYNAMIC_RECONFIG
     dynamic_reconfigure::Server<laserscan_multi_mergerConfig> server;
     dynamic_reconfigure::Server<laserscan_multi_mergerConfig>::CallbackType f;
 
