@@ -27,8 +27,9 @@ public:
     LaserscanMerger(rclcpp::Node::SharedPtr);
     void scanCallback(const sensor_msgs::msg::LaserScan::ConstSharedPtr& scan, std::string topic);
     void pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPointCloud2 *merged_cloud, builtin_interfaces::msg::Time time_stamp);
-    // void reconfigureCallback(laserscan_multi_mergerConfig &config, uint32_t level);
-
+#ifdef DYNAMIC_RECONFIG
+    void reconfigureCallback(laserscan_multi_mergerConfig &config, uint32_t level);
+#endif
 private:
     rclcpp::Node::SharedPtr node_;
     laser_geometry::LaserProjection projector_;
@@ -92,10 +93,9 @@ void LaserscanMerger::laserscan_topic_parser()
 		{
 			scan_subscribers[i] = node_->create_subscription<sensor_msgs::msg::LaserScan>(
 				input_topics[i], 
-				rclcpp::QoS(15).best_effort(), 
+				rclcpp::QoS(30).best_effort(),
 				[=](sensor_msgs::msg::LaserScan::SharedPtr msg) 
 				{
-					// RCLCPP_ERROR(node_->get_logger(), "%s", input_topics[i].c_str());
 					LaserscanMerger::scanCallback(msg, input_topics[i]); 
 				}
 			);
@@ -167,8 +167,8 @@ LaserscanMerger::LaserscanMerger(rclcpp::Node::SharedPtr nh)
 	this->cloud_destination_topic = node_->declare_parameter("cloud_destination_topic","/merged_cloud");
     this->scan_destination_topic  = node_->declare_parameter("scan_destination_topic", "/scan");
     this->laserscan_topics        = node_->declare_parameter("laserscan_topics", "");
-    this->angle_min               = node_->declare_parameter("angle_min", -3.14);//-2.36);
-    this->angle_max               = node_->declare_parameter("angle_max",  3.14);//2.36);
+    this->angle_min               = node_->declare_parameter("angle_min", -M_PI);
+    this->angle_max               = node_->declare_parameter("angle_max",  M_PI);
     this->angle_increment         = node_->declare_parameter("angle_increment", 0.0058);
     this->scan_time               = node_->declare_parameter("scan_time", 0.0333333);
     this->range_min               = node_->declare_parameter("range_min", 0.45);
@@ -207,11 +207,7 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
     	tfBuffer_->setCreateTimerInterface(timer_interface);
 	}
 	bool callback_timeout = false;
-	tfBuffer_->waitForTransform(
-		scan->header.frame_id, 
-		this->destination_frame, 
-		scan->header.stamp,
-		tf2::durationFromSec(1.0),
+	tfBuffer_->waitForTransform(scan->header.frame_id, this->destination_frame, scan->header.stamp,	tf2::durationFromSec(1.0),
 		[this, &callback_timeout](const tf2_ros::TransformStampedFuture & future)
 		{
 			try {
@@ -223,18 +219,13 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
 			}
 		}
 	);
-	projector_.transformLaserScanToPointCloud(scan->header.frame_id, *scan, oriCloud, *tfBuffer_, 25.0+1 ,laser_geometry::channel_option::Distance);
+	projector_.transformLaserScanToPointCloud(scan->header.frame_id, *scan,	oriCloud, *tfBuffer_, this->range_max+1, laser_geometry::channel_option::Distance);
 	try
 	{
-		geometry_msgs::msg::TransformStamped transformStamped = tfBuffer_->lookupTransform(destination_frame, scan->header.frame_id,
-            rclcpp::Time(0));
+		geometry_msgs::msg::TransformStamped transformStamped = tfBuffer_->lookupTransform(destination_frame, scan->header.frame_id, scan->header.stamp);
 		tf2::doTransform(oriCloud, tmpCloud, transformStamped);
-	}
-	catch (tf2::TransformException ex)
-	{
-		RCLCPP_ERROR(node_->get_logger(),"%s",ex.what());
-		return;
-	}
+	}catch (tf2::TransformException ex){RCLCPP_ERROR(node_->get_logger(),"%s",ex.what());return;}
+
 	for(int i=0; i<input_topics.size(); ++i)
 	{
 		if(topic.compare(input_topics[i]) == 0)
@@ -261,6 +252,14 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
 			pcl::concatenatePointCloud(merged_cloud, clouds[i], merged_cloud);
 			clouds_modified[i] = false;
 		}
+#if 1
+		Eigen::MatrixXf points;
+		getPointCloudAsEigen(merged_cloud, points);
+		pointcloud_to_laserscan(points, &merged_cloud, scan->header.stamp);
+
+		pcl_conversions::moveFromPCL(merged_cloud, tmpCloud);
+		point_cloud_publisher_->publish(tmpCloud);
+#else
 		pcl_conversions::moveFromPCL(merged_cloud, tmpCloud);
 		point_cloud_publisher_->publish(tmpCloud);
 
@@ -269,6 +268,7 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
 		getPointCloudAsEigen(merged_cloud, points);
 
 		pointcloud_to_laserscan(points, &merged_cloud, scan->header.stamp);
+#endif
 	}
 #else
 	sensor_msgs::msg::PointCloud tmpCloud1,tmpCloud2;
@@ -318,13 +318,13 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
 	}
 #endif
 }
-#if 1
+
 void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPointCloud2 *merged_cloud, builtin_interfaces::msg::Time time_stamp)
 {
 	auto output = make_unique<sensor_msgs::msg::LaserScan>();
 	output->header = pcl_conversions::fromPCL(merged_cloud->header);
 	output->header.frame_id = destination_frame.c_str();
-	output->header.stamp = time_stamp;  //fixes #265
+	output->header.stamp = time_stamp;
 	output->angle_min = this->angle_min;
 	output->angle_max = this->angle_max;
 	output->angle_increment = this->angle_increment;
@@ -338,9 +338,9 @@ void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPo
 
 	for(int i=0; i<points.cols(); i++)
 	{
-		const double &x = points(0,i);
-		const double &y = points(1,i);
-		const double &z = points(2,i);
+		const float &x = points(0,i);
+		const float &y = points(1,i);
+		const float &z = points(2,i);
 
 		if ( std::isnan(x) || std::isnan(y) || std::isnan(z) )
 		{
@@ -348,14 +348,14 @@ void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPo
 			continue;
 		}
 
-		double range_sq = y*y+x*x;
-		double range_min_sq_ = output->range_min * output->range_min;
+		float range_sq = y*y+x*x;
+		float range_min_sq_ = output->range_min * output->range_min;
 		if (range_sq < range_min_sq_) {
 			RCLCPP_DEBUG(node_->get_logger(), "rejected for range %f below minimum value %f. Point: (%f, %f, %f)", range_sq, range_min_sq_, x, y, z);
 			continue;
 		}
 
-		double angle = atan2(y, x);
+		float angle = atan2(y, x);
 		if (angle < output->angle_min || angle > output->angle_max)
 		{
 			RCLCPP_DEBUG(node_->get_logger(), "rejected for angle %f not in range (%f, %f)\n", angle, output->angle_min, output->angle_max);
@@ -371,7 +371,6 @@ void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPo
 	laser_scan_publisher_->publish(move(output));
 }
 
-#endif
 int main(int argc, char** argv)
 {
 	rclcpp::init(argc, argv);
