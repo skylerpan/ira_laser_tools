@@ -188,8 +188,8 @@ LaserscanMerger::LaserscanMerger(rclcpp::Node::SharedPtr nh)
 #endif
     this->laserscan_topic_parser();
     rclcpp::QoS qos(rclcpp::KeepLast(10));
-	point_cloud_publisher_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(cloud_destination_topic, qos);
-	laser_scan_publisher_ = node_->create_publisher<sensor_msgs::msg::LaserScan>(scan_destination_topic, qos);
+	point_cloud_publisher_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(cloud_destination_topic, qos.best_effort());
+	laser_scan_publisher_ = node_->create_publisher<sensor_msgs::msg::LaserScan>(scan_destination_topic, qos.best_effort());
 
 }
 
@@ -219,7 +219,7 @@ void LaserscanMerger::scanCallback(const sensor_msgs::msg::LaserScan::ConstShare
 			}
 		}
 	);
-	projector_.transformLaserScanToPointCloud(scan->header.frame_id, *scan,	oriCloud, *tfBuffer_, this->range_max+1, laser_geometry::channel_option::Distance);
+	projector_.transformLaserScanToPointCloud(scan->header.frame_id, *scan,	oriCloud, *tfBuffer_, this->range_max+1, laser_geometry::channel_option::Default);
 	try
 	{
 		geometry_msgs::msg::TransformStamped transformStamped = tfBuffer_->lookupTransform(destination_frame, scan->header.frame_id, scan->header.stamp);
@@ -335,12 +335,28 @@ void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPo
 
 	uint32_t ranges_size = std::ceil((output->angle_max - output->angle_min) / output->angle_increment);
 	output->ranges.assign(ranges_size, output->range_max + 1.0);
+	output->intensities.assign(ranges_size, 0.0);
 
+	int intensities_idx = getFieldIndex(*merged_cloud, "intensity");
+	int intensities_offset;
+	float intensitis;
+	if (intensities_idx != -1)
+	{
+		//intensities present
+		output->intensities.resize(ranges_size);
+		intensities_offset = merged_cloud->fields[intensities_idx].offset;
+	}
 	for(int i=0; i<points.cols(); i++)
 	{
 		const float &x = points(0,i);
 		const float &y = points(1,i);
 		const float &z = points(2,i);
+		if (intensities_idx != -1)
+		{
+			//intensities present
+			memcpy (&intensitis, &merged_cloud->data[intensities_offset], sizeof (float));
+			intensities_offset += merged_cloud->point_step;
+		}
 
 		if ( std::isnan(x) || std::isnan(y) || std::isnan(z) )
 		{
@@ -365,7 +381,15 @@ void LaserscanMerger::pointcloud_to_laserscan(Eigen::MatrixXf points, pcl::PCLPo
 
 
 		if (output->ranges[index] * output->ranges[index] > range_sq)
+		{
 			output->ranges[index] = sqrt(range_sq);
+			if (intensities_idx != -1)
+			{
+				//intensities present
+				output->intensities[index] = intensitis;
+			}
+		}
+
 	}
 
 	laser_scan_publisher_->publish(move(output));
